@@ -1,0 +1,182 @@
+---
+title: "DSC190Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Project
+
+```{r load packages}
+library(tidyr)
+library(DT)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(kableExtra)
+library(lubridate)
+library(readxl)
+library(highcharter)
+library(scales)
+library(RColorBrewer)
+library(wesanderson)
+library(plotly)
+library(shiny)
+library(readxl)
+library(readr)
+library(choroplethr)
+library(choroplethrMaps)
+library(GGally)
+library(zoo)
+library(ggmap)
+library(stringr)
+library(gridExtra)
+library(caret)
+library(treemap)
+library(psych)
+library(DAAG)
+library(leaps)
+library(corrplot)
+#library(glmnet)
+library(boot)
+library(naniar)
+```
+
+```{r read in data}
+#read in "train.csv" into data
+data <- read.csv(file="train.csv", header=TRUE)
+cols <- c("id", "name", "host_id", "host_name", "neighbourhood_group_cleansed","room_type", "price", "minimum_nights", "number_of_reviews", "last_review", "reviews_per_month", "calculated_host_listings_count")
+data <- data[cols]
+head(data) 
+```
+
+```{r columns}
+names(data)
+```
+
+```{r summary}
+summary(data)
+```
+
+```{r glimpse}
+glimpse(data)
+```
+
+```{r check missing}
+summary(is.na(data))
+```
+
+```{r visualize missing}
+naniar::gg_miss_var(data) + labs(y = "Missing") 
+```
+
+Only missing variables in "review per month."
+
+```{r}
+property_df <-  data %>% 
+  group_by(neighbourhood_group_cleansed, room_type) %>% 
+  summarize(Freq = n())
+
+# propertydf <- propertydf %>% 
+#   filter(property_type %in% c("Apartment","House","Condominium","Townhouse", "Loft"))
+
+total_property <-  data %>% 
+  filter(room_type %in% c("Private room","Entire home/apt","Entire home/apt")) %>% 
+  group_by(neighbourhood_group_cleansed) %>% 
+  summarize(sum = n())
+
+property_ratio <- merge (property_df, total_property, by="neighbourhood_group_cleansed")
+
+property_ratio <- property_ratio %>% 
+  mutate(ratio = Freq/sum)
+
+ggplot(property_ratio, aes(x=neighbourhood_group_cleansed, y = ratio, fill = room_type)) +
+  geom_bar(position = "dodge", stat="identity") + 
+  xlab("Borough") + ylab ("Count") +
+  scale_fill_discrete(name = "Property Type") + 
+  scale_y_continuous(labels = scales::percent) +
+  ggtitle("Which types of Listings are there in NYC?",
+          subtitle = "Map showing Count of Listing Type by Borough ") +
+          theme(plot.title = element_text(face = "bold", size = 14) ) +
+          theme(plot.subtitle = element_text(face = "bold", color = "grey35", hjust = 0.5)) +
+          theme(plot.caption = element_text(color = "grey68"))+scale_color_gradient(low="#d3cbcb", high="#852eaa")+
+          scale_fill_manual("Property Type", values=c("#e06f69","#357b8a", "#7db5b8", "#59c6f3", "#f6c458")) +
+          xlab("Neighborhood") + ylab("Percentage")
+```
+
+```{r}
+data %>% 
+  filter(!(is.na(neighbourhood_group_cleansed))) %>% 
+  filter(!(neighbourhood_group_cleansed == "Unknown")) %>% 
+  group_by(neighbourhood_group_cleansed) %>% 
+  summarise(mean_price = mean(price, na.rm = TRUE)) %>% 
+  ggplot(aes(x = reorder(neighbourhood_group_cleansed, mean_price), y = mean_price, fill = neighbourhood_group_cleansed)) +
+  geom_col(stat ="identity", color = "black", fill="#357b8a") +
+  coord_flip() +
+  theme_gray() +
+  labs(x = "Neighbourhood Group", y = "Price") +
+  geom_text(aes(label = round(mean_price,digit = 2)), hjust = 2.0, color = "white", size = 3.5) +
+  ggtitle("Mean Price comparison for each Neighbourhood Group", subtitle = "Price vs Neighbourhood Group") + 
+  xlab("Neighbourhood Group") + 
+  ylab("Mean Price") +
+  theme(legend.position = "none",
+        plot.title = element_text(color = "black", size = 14, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(color = "darkblue", hjust = 0.5),
+        axis.title.y = element_text(),
+        axis.title.x = element_text(),
+        axis.ticks = element_blank())
+```
+
+```{r}
+data %>% 
+  filter(!(is.na(room_type))) %>% 
+  filter(!(room_type == "Unknown")) %>% 
+  group_by(room_type) %>% 
+  summarise(mean_price = mean(price, na.rm = TRUE)) %>% 
+  ggplot(aes(x = reorder(room_type, mean_price), y = mean_price, fill = room_type)) +
+  geom_col(stat ="identity", color = "black", fill="#357b8a") +
+  coord_flip() +
+  theme_gray() +
+  labs(x = "Room Type", y = "Price") +
+  geom_text(aes(label = round(mean_price,digit = 2)), hjust = 2.0, color = "white", size = 3.5) +
+  ggtitle("Mean Price comparison with all Room Types", subtitle = "Price vs Room Type") + 
+  xlab("Room Type") + 
+  ylab("Mean Price") +
+  theme(legend.position = "none",
+        plot.title = element_text(color = "black", size = 14, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(color = "darkblue", hjust = 0.5),
+        axis.title.y = element_text(),
+        axis.title.x = element_text(),
+        axis.ticks = element_blank())
+```
+
+```{r}
+airbnb_model_1 <- lm (price ~ neighbourhood_group_cleansed + room_type + minimum_nights  + number_of_reviews + reviews_per_month + calculated_host_listings_count, data = data)
+
+summary_model_1 <- summary(airbnb_model_1)
+mse_1 <- sqrt(summary_model_1$sigma^2)
+r_sq_1 <- summary_model_1$r.squared
+adj_r_sq_1 <- summary_model_1$adj.r.squared
+
+summary_model_1
+```
+
+```{r}
+mse_1
+```
+
+```{r}
+par(mfrow=c(2,2)) 
+plot(airbnb_model_1)
+```
+
+
+
+
+
+
+
+
+
